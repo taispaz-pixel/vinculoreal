@@ -1,346 +1,438 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vínculo Real - Arquitetura de Software e Protótipo Master</title>
-    <style>
-        /* CONFIGURAÇÕES GERAIS DE DESIGN */
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 40px; }
-        h1 { color: #10b981; font-size: 2em; margin-bottom: 5px; text-align: center; text-transform: uppercase; letter-spacing: 2px; }
-        .master-subtitle { color: #94a3b8; font-size: 0.95em; text-align: center; max-width: 600px; margin-top: 0; margin-bottom: 20px; }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>Vínculo Real - Conexões Seguras</title>
+
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+
+<script type="module">
+// --- IMPORTAÇÕES DO FIREBASE ---
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// SUAS CHAVES OFICIAIS DO VÍNCULO REAL
+const firebaseConfig = {
+  apiKey: "AIzaSyCU8rzpSdih-gr43BavESElwtLisVD-tgA",
+  authDomain: "vinculo-seguro.firebaseapp.com",
+  projectId: "vinculo-seguro",
+  storageBucket: "vinculo-seguro.firebasestorage.app",
+  messagingSenderId: "851247864155",
+  appId: "1:851247864155:web:9583c8cdf28e565932e27e"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let modoAtual = "login";
+let fotosSelecionadas = { 1: null, 2: null, 3: null, 4: null, 5: null };
+let contatosEmergencia = [];
+
+// Alternar entre Login e Cadastro
+window.alternarModoAuth = () => {
+  const camposCadastro = document.getElementById("camposCadastro");
+  const tituloAuth = document.getElementById("tituloAuth");
+  const btnEntrar = document.getElementById("btnEntrar");
+  const btnCriarConta = document.getElementById("btnCriarConta");
+  const btnAlternarModo = document.getElementById("btnAlternarModo");
+  const avisoSeguranca = document.getElementById("avisoSeguranca");
+
+  if (modoAtual === "login") {
+    modoAtual = "cadastro";
+    camposCadastro.classList.remove("hidden");
+    avisoSeguranca.classList.remove("hidden");
+    tituloAuth.innerHTML = "🔒 1. Cadastro Gratuito";
+    btnEntrar.classList.add("hidden");
+    btnCriarConta.classList.remove("hidden");
+    btnAlternarModo.innerHTML = "Já possui uma conta? <span class='text-amber-400'>Entre aqui</span>";
+  } else {
+    modoAtual = "login";
+    camposCadastro.classList.add("hidden");
+    avisoSeguranca.classList.add("hidden");
+    tituloAuth.innerText = "Acesso Restrito";
+    btnEntrar.classList.remove("hidden");
+    btnCriarConta.classList.add("hidden");
+    btnAlternarModo.innerHTML = "Ainda não tem conta? <span class='text-amber-400'>Solicite acesso</span>";
+  }
+};
+
+// Upload de Fotos (Visualização Local e Validação)
+window.carregarFoto = (numFoto) => {
+  const input = document.getElementById(`inputFoto${numFoto}`);
+  const preview = document.getElementById(`previewFoto${numFoto}`);
+  const icone = document.getElementById(`iconeFoto${numFoto}`);
+  
+  if (input.files && input.files[0]) {
+    const file = input.files[0];
+    fotosSelecionadas[numFoto] = file;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      preview.src = e.target.result;
+      preview.classList.remove("hidden");
+      icone.classList.add("hidden");
+    }
+    reader.readAsDataURL(file);
+    
+    // Contagem de fotos
+    let enviadas = Object.values(fotosSelecionadas).filter(f => f !== null).length;
+    const msgFotos = document.getElementById('msgFotos');
+    if (enviadas < 5) {
+        msgFotos.style.color = '#ef4444';
+        msgFotos.innerText = `Faltam fotos (${enviadas}/5 selecionadas).`;
+    } else {
+        msgFotos.style.color = '#10b981';
+        msgFotos.innerText = `Autenticidade Validada (${enviadas} fotos)!`;
+    }
+  }
+};
+
+// Adicionar Contato de Emergência
+window.addEmergencia = () => {
+    const input = document.getElementById('inputEmergencia');
+    if (input.value.trim() !== "" && contatosEmergencia.length < 2) {
+        contatosEmergencia.push(input.value.trim());
+        document.getElementById('listaEmergencia').innerHTML += `<li class="bg-slate-800 border border-slate-600 p-2 text-xs rounded mb-1 text-slate-300">🚨 Contato: ${input.value}</li>`;
+        input.value = "";
         
-        /* GRID DE CELULARES SIMULADOS */
-        .app-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 30px; max-width: 1400px; width: 100%; }
+        if (contatosEmergencia.length === 2) {
+            input.disabled = true;
+            input.placeholder = "Limite máximo atingido";
+            document.getElementById('btnEmergencia').disabled = true;
+        }
+    }
+};
 
-        /* DESIGN DO SMARTPHONE */
-        .mobile-screen { background: #ffffff; width: 360px; min-height: 640px; border-radius: 36px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); padding: 25px; box-sizing: border-box; border: 10px solid #1e293b; position: relative; color: #334155; display: flex; flex-direction: column; }
-        .premium-border { border-color: #f59e0b; background: #fffdf9; } 
-        .relationship-border { border-color: #ef4444; background: #fffafb; }
-        
-        /* CABEÇALHOS INTERNOS DO APP */
-        h2 { color: #1e293b; font-size: 1.15em; text-align: center; margin-top: 0; margin-bottom: 15px; border-bottom: 2px solid #ef4444; padding-bottom: 8px; font-weight: 700; }
-        h2.premium-title { border-bottom-color: #f59e0b; color: #b45309; }
-        h2.relationship-title { border-bottom-color: #ef4444; color: #b91c1c; }
-        h3 { font-size: 0.85em; color: #475569; margin-top: 15px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-        
-        /* TAGS DE IDENTIFICAÇÃO DE SESSÃO */
-        .tag-status { background: #f1f5f9; border: 1px solid #cbd5e1; color: #64748b; padding: 4px 10px; border-radius: 20px; font-size: 0.7em; font-weight: bold; display: inline-block; margin-bottom: 15px; text-align: center; text-transform: uppercase; }
-        .premium-tag { background: #f59e0b; color: #ffffff; padding: 4px 10px; border-radius: 12px; font-size: 0.65em; font-weight: bold; position: absolute; top: 15px; right: 20px; letter-spacing: 0.5px; }
+// Login de Usuário
+document.getElementById("btnEntrar").addEventListener("click", async (e) => {
+  e.preventDefault();
+  const email = document.getElementById("email").value.trim();
+  const senha = document.getElementById("senha").value;
 
-        /* ELEMENTOS DE FORMULÁRIO */
-        .upload-area { border: 2px dashed #cbd5e1; padding: 15px; text-align: center; border-radius: 12px; margin-bottom: 12px; background: #f8fafc; transition: 0.2s; }
-        .input-group { display: flex; gap: 8px; margin-bottom: 12px; }
-        input[type="text"], input[type="file"], select { flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.85em; width: 100%; box-sizing: border-box; background: #ffffff; color: #334155; }
-        
-        /* BOTÕES OPERACIONAIS */
-        button { background: #ef4444; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.2s; margin-top: 5px; font-size: 0.85em; }
-        button:hover { background: #dc2626; }
-        button:disabled { background: #cbd5e1; color: #94a3b8; cursor: not-allowed; }
-        button.btn-inline { width: auto; margin-top: 0; padding: 10px 15px; }
-        button.btn-premium { background: #f59e0b; color: white; }
-        button.btn-premium:hover { background: #d97706; }
-        button.btn-pequeno { padding: 6px 10px; font-size: 0.7em; width: auto; margin: 2px; background: #475569; }
-        button.btn-pequeno:hover { background: #334155; }
+  if(!email || !senha) { alert("Preencha e-mail e senha para entrar."); return; }
+  
+  try {
+    document.getElementById("btnEntrar").innerText = "Autenticando...";
+    await signInWithEmailAndPassword(auth, email, senha);
+    document.getElementById("btnEntrar").innerHTML = "Entrar Seguramente <i class='fa-solid fa-arrow-right'></i>";
+  } catch(err) {
+    document.getElementById("btnEntrar").innerHTML = "Entrar Seguramente <i class='fa-solid fa-arrow-right'></i>";
+    alert("Credenciais incorretas ou perfil não encontrado.");
+  }
+});
 
-        /* CHIPS INTERATIVOS (BOTÕES DE AVALIAÇÃO E ALERTA) */
-        .chip-container { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-        .chip { background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 6px 10px; border-radius: 20px; cursor: pointer; font-size: 0.7em; font-weight: 500; user-select: none; transition: 0.2s; }
-        .chip:hover { background: #e2e8f0; }
-        .chip.sucesso.selected { background: #10b981; border-color: #059669; color: white; }
-        .chip.neutro.selected { background: #64748b; border-color: #475569; color: white; }
-        .chip.alerta.selected { background: #ef4444; border-color: #dc2626; color: white; }
+// Cadastro de Segurança Máxima
+document.getElementById("btnCriarConta").addEventListener("click", async (e) => {
+  e.preventDefault();
+  const nome = document.getElementById("nomeCompleto").value.trim();
+  const email = document.getElementById("email").value.trim();
+  const senha = document.getElementById("senha").value;
+  const intencao = document.getElementById("intencaoUsuario").value;
+  const termosAceitos = document.getElementById("termosUso").checked;
 
-        /* PAINEL DE RAIO-X PREMIUM (DADOS AGREGADOS) */
-        .bonus-premium-panel { background: #1e293b; color: #f8fafc; padding: 12px; border-radius: 12px; margin-top: 12px; border: 2px solid #f59e0b; }
-        .bonus-premium-panel ul { list-style: none; padding: 0; margin: 8px 0 0 0; font-size: 0.8em; color: #cbd5e1; }
-        .bonus-premium-panel li { margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  if(!nome || !email || !senha) { alert("Preencha todos os dados básicos."); return; }
+  if(!termosAceitos) { alert("Você precisa aceitar os Termos de Uso e Política de Privacidade."); return; }
+  if(contatosEmergencia.length === 0) { alert("Adicione pelo menos 1 contato de emergência."); return; }
+  
+  let fotosFaltando = 5 - Object.values(fotosSelecionadas).filter(f => f !== null).length;
+  if(fotosFaltando > 0) { alert(`Segurança rigorosa: Faltam ${fotosFaltando} foto(s) obrigatória(s).`); return; }
 
-        /* MAPA SIMULADO POR CORES */
-        .mapa-simulado { background: #cbd5e1; height: 130px; border-radius: 12px; position: relative; margin-bottom: 12px; border: 1px solid #94a3b8; background-image: radial-gradient(#94a3b8 1px, transparent 0); background-size: 10px 10px; }
-        .bolinha-mapa { width: 14px; height: 14px; border-radius: 50%; position: absolute; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.25); }
-        .legenda-mapa { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 0.7em; background: #f8fafc; padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 12px; }
-        .legenda-item { display: flex; align-items: center; gap: 5px; font-weight: 600; color: #475569; }
-        .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  try {
+    document.getElementById("btnCriarConta").innerText = "Criando e Criptografando...";
+    const userCredential = await createUserWithEmailAndPassword(auth, email, senha);
+    const u = userCredential.user;
+    
+    // Salva os dados no banco Firestore
+    await setDoc(doc(db, "usuarios", u.uid), {
+      nome: nome, email: email, intencao: intencao,
+      contatosSeguranca: contatosEmergencia,
+      statusConta: "Em Analise", strikes: 0, assinaturaAtiva: false,
+      dataCadastro: serverTimestamp(), fotosEnviadas: true
+    });
 
-        /* ALERTAS AUTOMÁTICOS PRE-DATE */
-        .alerta-seguranca { background: #ef4444; color: white; padding: 12px; border-radius: 12px; font-size: 0.75em; text-align: center; margin-bottom: 12px; font-weight: bold; line-height: 1.4; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.2); }
+    document.getElementById("btnCriarConta").innerText = "Concluir Cadastro";
+    alert("Cadastro salvo! Bem-vindo ao Vínculo Real.");
+    
+  } catch(err) {
+    document.getElementById("btnCriarConta").innerText = "Concluir Cadastro";
+    alert("ERRO: " + err.message);
+  }
+});
 
-        /* METRICAS DE RELACIONAMENTO (IA) */
-        .metric-container { margin-bottom: 10px; }
-        .metric-label { font-size: 0.75em; display: flex; justify-content: space-between; margin-bottom: 3px; color: #475569; font-weight: bold; }
-        .progress-bar { background: #e2e8f0; height: 6px; border-radius: 3px; overflow: hidden; }
-        .progress-fill { background: #10b981; height: 100%; transition: 0.3s; }
-        .memoria-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-        .foto-memoria { background: #e2e8f0; height: 60px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.2em; border: 2px solid #fff; }
+window.logout = async () => { await signOut(auth); };
 
-        /* OVERLAY DO MODO CONGELAR (FREEZE) */
-        .frozen-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(240, 249, 255, 0.96); z-index: 10; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; box-sizing: border-box; border-radius: 26px; }
-        .frozen-overlay h3 { color: #0369a1; font-size: 1.3em; margin: 10px 0 5px 0; font-weight: bold; }
-        .frozen-overlay p { font-size: 0.8em; color: #0284c7; margin-bottom: 15px; padding: 0 10px; }
-        
-        /* LISTAS DE EXIBIÇÃO */
-        .lista-app { list-style: none; padding: 0; margin: 0 0 12px 0; font-size: 0.8em; }
-        .lista-app li { background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px; margin-bottom: 4px; border-radius: 6px; color: #475569; font-weight: 500; }
-    </style>
+// Controle das Abas Internas do App
+window.mudarAba = (abaId) => {
+    document.querySelectorAll('.app-view').forEach(view => view.classList.add('hidden'));
+    document.getElementById(abaId).classList.remove('hidden');
+    
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.remove('text-amber-400');
+        btn.classList.add('text-slate-500');
+    });
+    document.getElementById('nav-' + abaId).classList.remove('text-slate-500');
+    document.getElementById('nav-' + abaId).classList.add('text-amber-400');
+};
+
+// Funções do Protótipo
+window.mostrarDadosPremium = () => {
+    document.getElementById('painelDadosPremium').style.display = 'block';
+    document.getElementById('btnVerDados').style.display = 'none';
+};
+
+window.toggleChip = (elemento) => { elemento.classList.toggle('selected'); };
+
+window.toggleFreeze = () => {
+    const overlay = document.getElementById('overlayCongelado');
+    if (overlay.classList.contains('hidden')) {
+        if(confirm("Deseja congelar a relação? Seu perfil sumirá das buscas do aplicativo imediatamente.")){
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+        }
+    } else {
+        overlay.classList.add('hidden');
+        overlay.classList.remove('flex');
+    }
+};
+
+// Observador de Estado da Conta
+onAuthStateChanged(auth, (u) => {
+  if (u) {
+    document.getElementById("authWrapper").classList.add("hidden");
+    document.getElementById("mainApp").classList.remove("hidden");
+    window.mudarAba('view-feed'); // Abre a primeira aba do app
+  } else {
+    document.getElementById("authWrapper").classList.remove("hidden");
+    document.getElementById("mainApp").classList.add("hidden");
+  }
+});
+</script>
+
+<style>
+/* ESTILOS COMBINADOS: PREMIUM GLASS + PROTÓTIPO */
+* { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+body { margin:0; font-family: 'Segoe UI', sans-serif; background-color: #0f172a; color: #f8fafc; min-height: 100vh; }
+.card-glass { background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 24px; padding: 24px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
+.input-premium { width: 100%; padding: 14px; background: rgba(15, 23, 42, 0.8); border: 1px solid #334155; border-radius: 12px; color: white; outline: none; transition: 0.3s; }
+.input-premium:focus { border-color: #fbbf24; }
+.foto-slot { position: relative; width: 100%; aspect-ratio: 1/1; background: #1e293b; border: 2px dashed #475569; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.foto-slot input { position: absolute; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10; }
+.foto-slot img { width: 100%; height: 100%; object-fit: cover; position: absolute; z-index: 5; }
+.tag-status { background: #f1f5f9; border: 1px solid #cbd5e1; color: #64748b; padding: 4px 10px; border-radius: 20px; font-size: 0.7em; font-weight: bold; text-transform: uppercase; display:inline-block;}
+.premium-title { border-bottom: 2px solid #f59e0b; color: #f59e0b; padding-bottom: 5px; font-weight: bold; text-align: center; margin-bottom: 15px;}
+.chip-container { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.chip { background: #1e293b; border: 1px solid #475569; color: #94a3b8; padding: 6px 10px; border-radius: 20px; cursor: pointer; font-size: 0.7em; transition: 0.2s; }
+.chip.sucesso.selected { background: #10b981; border-color: #059669; color: white; }
+.chip.neutro.selected { background: #64748b; border-color: #475569; color: white; }
+.chip.alerta.selected { background: #ef4444; border-color: #dc2626; color: white; }
+.mapa-simulado { background: #cbd5e1; height: 130px; border-radius: 12px; position: relative; margin-bottom: 12px; border: 1px solid #94a3b8; background-image: radial-gradient(#94a3b8 1px, transparent 0); background-size: 10px 10px; }
+.bolinha-mapa { width: 14px; height: 14px; border-radius: 50%; position: absolute; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+.frozen-overlay { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.96); z-index: 50; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; border-radius: 24px; }
+</style>
 </head>
+
 <body>
 
-    <h1>🛡️ VÍNCULO REAL</h1>
-    <p class="master-subtitle">Protótipo Funcional Unificado. Explore o fluxo completo de telas simulando as regras rígidas, os ambientes Premium e o ecossistema de segurança jurídica do aplicativo.</p>
+<div id="authWrapper" class="p-4 flex flex-col items-center justify-center min-h-screen">
+  <div class="w-full max-w-md mx-auto">
+    <div class="text-center mb-6">
+        <div class="inline-block p-4 rounded-full bg-slate-800 border border-slate-700 mb-3 shadow-lg"><i class="fa-solid fa-shield-heart text-4xl text-amber-400"></i></div>
+        <h1 class="text-3xl font-black tracking-wider text-white">VÍNCULO<span class="text-amber-400">REAL</span></h1>
+    </div>
 
-    <div class="app-container">
+    <div class="card-glass space-y-5 animate-fade-in">
+      <h3 id="tituloAuth" class="text-xl font-bold text-center mb-4 border-b border-slate-700 pb-3">Acesso Restrito</h3>
+      
+      <div id="avisoSeguranca" class="hidden bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg text-xs text-amber-200 mb-4 flex gap-3 items-start">
+        <i class="fa-solid fa-lock text-amber-400 mt-1"></i>
+        <p>Segurança Máxima: Exigimos dados reais, 5 fotos e intenção clara. Contas falsas são banidas.</p>
+      </div>
 
-        <div class="mobile-screen">
-            <div style="text-align: center;"><div class="tag-status" style="color: #ef4444; border-color: #fca5a5;">🔒 1. Cadastro Gratuito</div></div>
-            <h2>Configurações do Perfil</h2>
-
-            <h3>🎯 Intenção Travada (Filtro Rígido)</h3>
-            <select style="margin-bottom: 10px; font-weight: bold;">
-                <option>Namoro Sério</option>
-                <option>Amizade Primeiro</option>
-                <option>Só Conversar / Casual</option>
+      <div id="camposCadastro" class="space-y-4 hidden border-b border-slate-700 pb-5 mb-2">
+        <input id="nomeCompleto" type="text" placeholder="Nome Completo (Real)" class="input-premium" />
+        
+        <div>
+            <p class="text-[10px] text-slate-400 uppercase tracking-wide mb-1 ml-1">🎯 Intenção Travada (Filtro Rígido)</p>
+            <select id="intencaoUsuario" class="input-premium appearance-none">
+                <option value="Namoro">Namoro Sério</option>
+                <option value="Amizade">Amizade Primeiro</option>
+                <option value="Casual">Só Conversar / Casual</option>
             </select>
-
-            <h3>📸 Fotos de Autenticidade (Mín. 5)</h3>
-            <div class="upload-area">
-                <input type="file" id="fotosUpload" multiple accept="image/*" onchange="verificarFotos()">
-                <p id="msgFotos" style="color: #ef4444; font-size: 0.75em; font-weight: bold; margin: 5px 0 0 0;">Faltam fotos (0/5 selecionadas).</p>
-            </div>
-
-            <h3>🚨 Contatos de Emergência (Máx. 2)</h3>
-            <div class="input-group">
-                <input type="text" id="inputEmergencia" placeholder="Nome ou WhatsApp">
-                <button class="btn-inline" id="btnEmergencia" onclick="addEmergencia()">Add</button>
-            </div>
-            <ul class="lista-app" id="listaEmergencia"></ul>
-
-            <div id="painelMensagensFree" style="display:none; background:#f1f5f9; padding:10px; border-radius:8px; margin-bottom:12px;">
-                <p style="font-size:0.65em; font-weight:bold; color:#64748b; margin:0 0 5px 0;">📱 Mensagens Pré-Prontas (Teclado Travado):</p>
-                <button class="btn-pequeno" onclick="alert('Alerta enviado via SMS: Estou indo para um encontro!')">Estou indo para um encontro</button>
-                <button class="btn-pequeno" onclick="alert('Alerta enviado via SMS: Segue o meu compartilhamento de localização.')">Mandar Localização</button>
-            </div>
-
-            <button id="btnSalvarPerfil" style="margin-top:auto;" disabled onclick="alert('Cadastro inicial salvo com sucesso! Trava de 5 fotos validada.')">Concluir Cadastro</button>
         </div>
 
-
-        <div class="mobile-screen">
-            <div style="text-align: center;"><div class="tag-status" style="color: #3b82f6; border-color: #93c5fd;">🔍 2. Feed de Perfis</div></div>
-            <h2>Perfil de Terceiros</h2>
-            
-            <div style="background: #e2e8f0; height: 140px; border-radius: 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; font-size: 2.5em;">👤</div>
-            
-            <div style="text-align: center; margin-bottom: 12px;">
-                <span class="selo-comunidade" style="font-size:0.75em;">⭐ Selo Comunidade Ativo</span>
-                <p style="font-size: 0.85em; font-weight: bold; margin: 5px 0 0 0;">Marcelo Souza, 28 anos</p>
-                <p style="font-size: 0.7em; color: #64748b; margin: 2px 0 0 0;">Verificado via Caf.io • Busca: Namoro Sério</p>
+        <div>
+            <p class="text-[10px] text-slate-400 uppercase tracking-wide mb-1 ml-1">📸 Fotos de Autenticidade (Mín. 5)</p>
+            <div class="grid grid-cols-5 gap-2">
+                <div class="foto-slot"><input type="file" id="inputFoto1" onchange="window.carregarFoto(1)"><i id="iconeFoto1" class="fa-solid fa-camera text-slate-500"></i><img id="previewFoto1" class="hidden"></div>
+                <div class="foto-slot"><input type="file" id="inputFoto2" onchange="window.carregarFoto(2)"><i id="iconeFoto2" class="fa-solid fa-plus text-slate-500"></i><img id="previewFoto2" class="hidden"></div>
+                <div class="foto-slot"><input type="file" id="inputFoto3" onchange="window.carregarFoto(3)"><i id="iconeFoto3" class="fa-solid fa-plus text-slate-500"></i><img id="previewFoto3" class="hidden"></div>
+                <div class="foto-slot"><input type="file" id="inputFoto4" onchange="window.carregarFoto(4)"><i id="iconeFoto4" class="fa-solid fa-plus text-slate-500"></i><img id="previewFoto4" class="hidden"></div>
+                <div class="foto-slot"><input type="file" id="inputFoto5" onchange="window.carregarFoto(5)"><i id="iconeFoto5" class="fa-solid fa-plus text-slate-500"></i><img id="previewFoto5" class="hidden"></div>
             </div>
+            <p id="msgFotos" class="text-[10px] text-red-400 font-bold mt-1 text-center">Faltam fotos (0/5 selecionadas).</p>
+        </div>
 
-            <div class="bonus-premium-panel" id="painelDadosPremium" style="display: none;">
-                <h3 style="color: #f59e0b; margin-top: 0; font-size: 0.85em; border-bottom: 1px solid #334155; padding-bottom: 4px;">💎 Raio-X Premium (Dados do Algoritmo)</h3>
-                <ul>
+        <div>
+            <p class="text-[10px] text-slate-400 uppercase tracking-wide mb-1 ml-1">🚨 Contatos de Emergência (Máx. 2)</p>
+            <div class="flex gap-2 mb-2">
+                <input type="text" id="inputEmergencia" placeholder="Ex: Mãe (11) 9999-9999" class="input-premium py-2" />
+                <button type="button" id="btnEmergencia" onclick="window.addEmergencia()" class="bg-amber-500 text-slate-900 px-4 rounded-xl font-bold hover:bg-amber-400">Add</button>
+            </div>
+            <ul id="listaEmergencia"></ul>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        <input id="email" type="email" placeholder="E-mail" class="input-premium" />
+        <input id="senha" type="password" placeholder="Senha segura" class="input-premium" />
+      </div>
+
+      <script>
+        const checkElement = `
+        <div class="flex items-start gap-2 mt-4 px-1">
+            <input type="checkbox" id="termosUso" class="mt-1 w-4 h-4 accent-amber-500">
+            <label for="termosUso" class="text-xs text-slate-400">Concordo com os <a href="termos.html" class="text-amber-400 underline">Termos</a> e <a href="privacidade.html" class="text-amber-400 underline">Privacidade</a>.</label>
+        </div>`;
+        document.getElementById('camposCadastro').insertAdjacentHTML('beforeend', checkElement);
+      </script>
+
+      <div class="pt-4">
+        <button id="btnEntrar" type="button" class="w-full bg-slate-800 border border-slate-600 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-slate-700">Entrar Seguramente <i class="fa-solid fa-arrow-right"></i></button>
+        <button id="btnCriarConta" type="button" class="hidden w-full bg-amber-500 text-slate-900 p-4 rounded-xl font-black shadow-[0_0_15px_rgba(245,158,11,0.4)]">Concluir Cadastro</button>
+      </div>
+
+      <div class="text-center pt-4 border-t border-slate-700 mt-4">
+        <button id="btnAlternarModo" type="button" onclick="window.alternarModoAuth()" class="text-sm text-slate-400 font-medium">Ainda não tem conta? <span class="text-amber-400">Solicite acesso</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="mainApp" class="hidden flex flex-col h-screen max-w-md mx-auto bg-slate-900 relative">
+    
+    <div class="flex justify-between items-center p-4 bg-slate-800 border-b border-slate-700">
+        <h1 class="text-lg font-black text-white"><i class="fa-solid fa-shield-heart text-amber-400"></i> VÍNCULO REAL</h1>
+        <button onclick="window.logout()" class="text-slate-400 hover:text-red-400"><i class="fa-solid fa-power-off"></i></button>
+    </div>
+
+    <div class="flex-1 overflow-y-auto p-4 pb-20">
+        
+        <div id="view-feed" class="app-view space-y-4">
+            <div class="text-center"><div class="tag-status" style="color: #3b82f6; border-color: #93c5fd;">🔍 2. Feed de Perfis</div></div>
+            <div class="bg-slate-800 h-64 rounded-2xl flex items-center justify-center text-6xl border border-slate-700 shadow-lg">👤</div>
+            <div class="text-center">
+                <span class="bg-emerald-900 text-emerald-400 px-3 py-1 rounded-full text-[10px] font-bold border border-emerald-700"><i class="fa-solid fa-star"></i> Selo Comunidade Ativo</span>
+                <h2 class="text-xl font-bold mt-3">Marcelo Souza, 28</h2>
+                <p class="text-xs text-slate-400 mt-1">Verificado via Caf.io • Busca: Namoro Sério</p>
+            </div>
+            <div id="painelDadosPremium" style="display: none;" class="bg-slate-800 border-2 border-amber-500 rounded-xl p-4 mt-4">
+                <h3 class="text-amber-500 font-bold text-sm border-b border-slate-700 pb-2 mb-2"><i class="fa-regular fa-gem"></i> Raio-X Premium (Algoritmo)</h3>
+                <ul class="text-xs text-slate-300 space-y-2">
                     <li>🟩 <b>95%</b> atestam que as fotos são reais.</li>
                     <li>🟩 <b>88%</b> elogiaram o bom papo e educação.</li>
                     <li>🟩 <b>100%</b> relataram conduta respeitosa.</li>
                 </ul>
             </div>
-
-            <button id="btnVerDados" class="btn-premium" style="margin-top: auto;" onclick="mostrarDadosPremium()">💎 Ver Raio-X (Recurso Premium)</button>
+            <button id="btnVerDados" onclick="window.mostrarDadosPremium()" class="w-full bg-amber-500 text-slate-900 font-bold p-3 rounded-xl shadow-lg mt-4"><i class="fa-regular fa-gem"></i> Ver Raio-X (Premium)</button>
         </div>
 
-
-        <div class="mobile-screen">
-            <div style="text-align: center;"><div class="tag-status" style="color: #10b981; border-color: #6ee7b7;">🗺️ 3. Inteligência de Local</div></div>
-            <h2>Locais & Segurança</h2>
-
+        <div id="view-mapa" class="app-view hidden space-y-4">
+            <div class="text-center"><div class="tag-status" style="color: #10b981; border-color: #6ee7b7;">🗺️ 3. Mapa de Risco</div></div>
+            <h2 class="premium-title" style="color:white; border-color:#10b981;">Locais & Segurança</h2>
+            
             <div class="mapa-simulado">
                 <div class="bolinha-mapa" style="background:#3b82f6; top:20px; left:50px;" title="Seguro"></div>
                 <div class="bolinha-mapa" style="background:#ef4444; top:55px; left:230px;" title="Perigoso"></div>
                 <div class="bolinha-mapa" style="background:#f59e0b; top:90px; left:110px;" title="Demora"></div>
             </div>
-
-            <div class="legenda-mapa">
-                <div class="legenda-item"><span class="dot" style="background:#3b82f6;"></span> Azul - Seguro</div>
-                <div class="legenda-item"><span class="dot" style="background:#10b981;"></span> Verde - Legal</div>
-                <div class="legenda-item"><span class="dot" style="background:#94a3b8;"></span> Cinza - Nunca fui</div>
-                <div class="legenda-item"><span class="dot" style="background:#f59e0b;"></span> Amarelo - Demora</div>
-                <div class="legenda-item" style="grid-column: span 2;"><span class="dot" style="background:#ef4444;"></span> Vermelho - Perigoso</div>
+            
+            <div class="bg-slate-800 p-3 rounded-xl border border-slate-700 text-xs grid grid-cols-2 gap-2 text-slate-300">
+                <div><span class="inline-block w-2 h-2 rounded-full bg-blue-500"></span> Azul - Seguro</div>
+                <div><span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span> Verde - Legal</div>
+                <div><span class="inline-block w-2 h-2 rounded-full bg-amber-500"></span> Amarelo - Demora</div>
+                <div><span class="inline-block w-2 h-2 rounded-full bg-red-500"></span> Vermelho - Perigo</div>
             </div>
             
-            <button class="btn-premium" style="font-size:0.75em; padding:8px;" onclick="alert('Recurso Exclusivo Premium: Apenas assinantes podem inserir novos locais e dar notas para estabelecimentos.')">➕ Adicionar ou Avaliar Local (Premium)</button>
-
-            <h3>⚙️ Disparo Automático Pré-Date</h3>
-            <div class="alerta-seguranca">
-                ⚠️ DICA VÍNCULO REAL: Evite lugares que não conhece ao anoitecer. Evite dar documentos pessoais no encontro. Caso esteja desconfiado(a), o aplicativo tem a opção Premium com o botão de adicionar pessoa de confiança, que você mesmo compartilhará a sua localização.
+            <div class="bg-red-900/40 border border-red-500/50 p-4 rounded-xl text-center">
+                <p class="text-xs text-red-200 font-bold mb-2">⚠️ DICA PRÉ-DATE</p>
+                <p class="text-[10px] text-slate-300">Evite lugares que não conhece. Em caso de desconfiança, use o Lounge Premium para compartilhar sua localização com as testemunhas cadastradas.</p>
             </div>
         </div>
 
-
-        <div class="mobile-screen premium-border">
-            <span class="premium-tag">PREMIUM</span>
-            <div style="text-align: center;"><div class="tag-status" style="color: #d97706; border-color: #fcd34d;">🛡️ 4. Durante o Date</div></div>
-            <h2 class="premium-title">Os Dois Grupos de Controle</h2>
-
-            <div style="background: white; padding: 10px; border-radius: 12px; margin-bottom: 12px; border: 1.5px solid #ef4444;">
-                <h4 style="margin: 0 0 5px 0; color: #ef4444; font-size: 0.8em; text-transform: uppercase;">🛡️ Grupo 1: Testemunhas (Rígido)</h4>
-                <p style="font-size:0.65em; color:#64748b; margin: 0 0 8px 0;">Comunicação unilateral. Teclado bloqueado. Apenas comandos de GPS:</p>
-                <div class="chip-container">
-                    <div class="chip alerta" onclick="alert('📍 Localização ao vivo enviada para as 3 testemunhas!')">📍 Compartilhar GPS (1h)</div>
-                    <div class="chip" onclick="alert('🚗 Mensagem enviada: Estou a caminho do local.')">🚗 Estou a caminho</div>
-                    <div class="chip" onclick="alert('👍 Mensagem enviada: Cheguei, tudo certo por aqui.')">👍 Cheguei, tudo bem</div>
-                    <div class="chip alerta" style="background: #ef4444; color: white;" onclick="alert('🚨 ALERTA DE SOCORRO DISPARADO PARA OS 3 AMIGOS!')">🚨 Me liguem urgente</div>
+        <div id="view-date" class="app-view hidden space-y-4">
+            <div class="text-center"><div class="tag-status" style="color: #d97706; border-color: #fcd34d;">🛡️ 4. Durante e Pós-Date</div></div>
+            
+            <div class="bg-slate-800 border border-red-500 p-4 rounded-xl">
+                <h4 class="text-red-400 font-bold text-xs mb-2 uppercase">🛡️ Grupo Testemunhas (Travado)</h4>
+                <div class="grid grid-cols-2 gap-2">
+                    <button class="bg-red-500/20 text-red-400 text-[10px] p-2 rounded border border-red-500/50" onclick="alert('📍 GPS Enviado (1h)')">📍 Enviar GPS</button>
+                    <button class="bg-slate-700 text-slate-300 text-[10px] p-2 rounded" onclick="alert('🚗 Mensagem enviada')">🚗 A Caminho</button>
+                    <button class="bg-slate-700 text-slate-300 text-[10px] p-2 rounded" onclick="alert('👍 Cheguei bem')">👍 Cheguei</button>
+                    <button class="bg-red-600 text-white font-bold text-[10px] p-2 rounded shadow-lg" onclick="alert('🚨 PÂNICO DISPARADO')">🚨 SOCORRO</button>
                 </div>
             </div>
 
-            <div style="background: white; padding: 10px; border-radius: 12px; border: 1.5px solid #3b82f6; margin-top: auto;">
-                <h4 style="margin: 0 0 5px 0; color: #3b82f6; font-size: 0.8em; text-transform: uppercase;"> Lounge Social (Conversa Livre)</h4>
-                <p style="font-size:0.65em; color:#64748b; margin: 0 0 8px 0;">Círculo social aberto (Você + 3 amigos). Espaço livre para fofocas:</p>
-                <div style="background:#f1f5f9; height:50px; padding:6px; border-radius:6px; font-size:0.7em; color:#475569; overflow-y: auto;">
-                    <b>Você:</b> Amigas, olha o look do date! 👗<br>
-                    <b>Amiga 1:</b> Maravilhosa! Manda notícias!
-                </div>
-                <div class="input-group" style="margin-bottom:0; margin-top:5px;">
-                    <input type="text" placeholder="Mande áudio, foto ou vídeo..." style="padding:6px; font-size:0.75em;">
-                    <button class="btn-inline" style="background:#3b82f6; padding:6px 10px;" onclick="alert('Simulação: Mídia enviada para o chat livre dos amigos!')">Enviar</button>
-                </div>
+            <div class="bg-slate-800 border border-amber-500 p-4 rounded-xl mt-4">
+                <h4 class="text-amber-500 font-bold text-xs mb-2 uppercase">💎 Avaliação Sigilosa Pós-Date</h4>
+                <p class="text-[10px] text-slate-400 mb-3">Selecione para alimentar a Caixa Preta.</p>
+                
+                <h5 class="text-[10px] text-emerald-400 font-bold">🌟 Positivos</h5>
+                <div class="chip-container"><div class="chip sucesso" onclick="window.toggleChip(this)">Fotos reais 📸</div><div class="chip sucesso" onclick="window.toggleChip(this)">Educado(a) 🤝</div></div>
+                
+                <h5 class="text-[10px] text-red-400 font-bold mt-2">🚨 Alertas (3 Strikes)</h5>
+                <div class="chip-container"><div class="chip alerta" onclick="window.toggleChip(this)">Deu Bolo 👻</div><div class="chip alerta" onclick="window.toggleChip(this)">Assédio 🛑</div></div>
+                
+                <button class="w-full bg-amber-500 text-slate-900 font-bold text-xs p-3 rounded-xl mt-2" onclick="alert('Dados sigilosos salvos na nuvem.')">Enviar Feedback</button>
             </div>
         </div>
 
-
-        <div class="mobile-screen premium-border">
-            <span class="premium-tag">PREMIUM</span>
-            <div style="text-align: center;"><div class="tag-status" style="color: #d97706; border-color: #fcd34d;">📋 5. Pós-Encontro</div></div>
-            <h2 class="premium-title">Avaliação do Date</h2>
-            <p style="font-size:0.65em; color:#64748b; text-align:center; margin-top:-10px; margin-bottom:12px;">Preenchimento restrito a botões. Suas escolhas são sigilosas e alimentam o sistema de 3 Strikes.</p>
-
-            <h4 style="color:#10b981; font-size:0.75em; margin: 5px 0;">🌟 Sinais Positivos</h4>
-            <div class="chip-container">
-                <div class="chip sucesso" onclick="this.classList.toggle('selected')">Fotos reais e precisas 📸</div>
-                <div class="chip sucesso" onclick="this.classList.toggle('selected')">Educado(a) e gentil 🤝</div>
-                <div class="chip sucesso" onclick="this.classList.toggle('selected')">Respeitou meus limites ⏳</div>
-                <div class="chip sucesso" onclick="this.classList.toggle('selected')">Papo fluiu / Ótimo date ✨</div>
-                <div class="chip sucesso" onclick="this.classList.toggle('selected')">Transparente nas intenções 🎯</div>
+        <div id="view-namoro" class="app-view hidden space-y-4 relative">
+            
+            <div id="overlayCongelado" class="frozen-overlay hidden">
+                <div class="text-5xl mb-2">❄️</div>
+                <h3 class="text-xl font-bold text-blue-400 mb-2">Vínculo Preservado</h3>
+                <p class="text-xs text-slate-300 mb-6">O relacionamento está blindado. Vocês estão 100% invisíveis no app.</p>
+                <button onclick="window.toggleFreeze()" class="bg-emerald-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg">Descongelar Perfil</button>
             </div>
 
-            <h4 style="color:#64748b; font-size:0.75em; margin: 5px 0;">⚖️ Fatos Neutros</h4>
-            <div class="chip-container">
-                <div class="chip neutro" onclick="this.classList.toggle('selected')">Sem química, mas amigável 🤷‍♀️</div>
-                <div class="chip neutro" onclick="this.classList.toggle('selected')">Cada um pagou sua conta 💳</div>
-                <div class="chip neutro" onclick="this.classList.toggle('selected')">Encontro rápido (Café) ☕</div>
-                <div class="chip neutro" onclick="this.classList.toggle('selected')">Visões de vida diferentes 🧭</div>
-                <div class="chip neutro" onclick="this.classList.toggle('selected')">Ficou apenas no chat 📱</div>
+            <div class="text-center"><div class="tag-status" style="background:#ef4444; color:white; border:none;">❤️ 6. Fase de Namoro</div></div>
+            
+            <div class="bg-slate-800 p-4 rounded-xl">
+                <h3 class="text-xs font-bold text-slate-400 uppercase mb-3">Índice de Saúde</h3>
+                <div class="mb-3">
+                    <div class="flex justify-between text-[10px] font-bold text-emerald-400 mb-1"><span>Respeito</span><span>95%</span></div>
+                    <div class="w-full bg-slate-700 h-1.5 rounded-full"><div class="bg-emerald-500 h-1.5 rounded-full" style="width: 95%"></div></div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-[10px] font-bold text-blue-400 mb-1"><span>Complicidade</span><span>82%</span></div>
+                    <div class="w-full bg-slate-700 h-1.5 rounded-full"><div class="bg-blue-500 h-1.5 rounded-full" style="width: 82%"></div></div>
+                </div>
             </div>
 
-            <h4 style="color:#ef4444; font-size:0.75em; margin: 5px 0;">🚨 Flags de Risco (Gera Suspensão)</h4>
-            <div class="chip-container">
-                <div class="chip alerta" onclick="this.classList.toggle('selected')">Não compareceu (Deu bolo) 👻</div>
-                <div class="chip alerta" onclick="this.classList.toggle('selected')">Fotos ou idade falsas 🎭</div>
-                <div class="chip alerta" onclick="this.classList.toggle('selected')">Insistiu para ir a local privado ⚠️</div>
-                <div class="chip alerta" onclick="this.classList.toggle('selected')">Comportamento grosseiro 🚫</div>
-                <div class="chip alerta" onclick="this.classList.toggle('selected')">Me senti muito desconfortável 🛑</div>
-            </div>
-
-            <button class="btn-premium" style="margin-top:auto;" onclick="alert('Avaliação processada! Dados enviados para a Caixa Preta do algoritmo.')">Enviar Feedback Blindado</button>
-        </div>
-
-
-        <div class="mobile-screen relationship-border">
-            <span class="premium-tag" style="background:#ef4444;">NAMORO</span>
-            <div style="text-align: center;"><div class="tag-status" style="color: #b91c1c; border-color: #fca5a5;">❤️ 6. Fase de Namoro</div></div>
-            <h2 class="relationship-title">Evolução do Vínculo</h2>
-
-            <div class="frozen-overlay" id="overlayCongelado">
-                <div style="font-size: 3.5em; margin-bottom: 5px;">❄️</div>
-                <h3>Vínculo Preservado</h3>
-                <p>O relacionamento está blindado e pausado. Vocês estão 100% invisíveis para buscas no aplicativo, protegendo o compromisso sem apagar o histórico de memórias.</p>
-                <button onclick="toggleFreeze()" style="background: #10b981; font-size:0.8em; padding:8px 15px;">Descongelar Perfil</button>
-            </div>
-
-            <h3>📊 Índice de Saúde da Relação</h3>
-            <div class="metric-container">
-                <div class="metric-label"><span>Respeito & Clareza</span> <span>95%</span></div>
-                <div class="progress-bar"><div class="progress-fill" style="width: 95%;"></div></div>
-            </div>
-            <div class="metric-container">
-                <div class="metric-label"><span>Complicidade</span> <span>82%</span></div>
-                <div class="progress-bar"><div class="progress-fill" style="width: 82%; background: #3b82f6;"></div></div>
-            </div>
-            <p style="font-size: 0.75em; background:#e0f2fe; padding:8px; border-radius:6px; color:#0369a1; font-style:italic; margin-bottom:15px;">
-                💡 <b>Consultor IA:</b> Vocês mantiveram uma excelente clareza emocional este mês. Que tal planejar uma viagem curta de fim de semana?
-            </p>
-
-            <h3>📸 Espaço de Memórias Trancado</h3>
-            <div class="memoria-grid">
-                <div class="foto-memoria">🏖️</div>
-                <div class="foto-memoria">🍕</div>
-            </div>
-
-            <button class="btn-freeze" id="btnFreeze" style="margin-top:auto;" onclick="toggleFreeze()">❄️ Ativar "Modo Preservar Vínculo"</button>
+            <button onclick="window.toggleFreeze()" class="w-full border-2 border-blue-400 text-blue-400 font-bold p-4 rounded-xl hover:bg-blue-400 hover:text-slate-900 transition-colors">
+                ❄️ Ativar Modo "Preservar Vínculo"
+            </button>
         </div>
 
     </div>
 
-    <script>
-        // Trava das 5 Fotos Obrigatórias (Tela 1)
-        function verificarFotos() {
-            const qtd = document.getElementById('fotosUpload').files.length;
-            const msg = document.getElementById('msgFotos');
-            const btn = document.getElementById('btnSalvarPerfil');
-            
-            if (qtd < 5) {
-                msg.style.color = '#ef4444';
-                msg.innerText = `Faltam fotos (${qtd}/5 selecionadas).`;
-                btn.disabled = true;
-            } else {
-                msg.style.color = '#10b981';
-                msg.innerText = `Autenticidade Validada (${qtd} fotos)!`;
-                btn.disabled = false;
-            }
-        }
+    <div class="absolute bottom-0 w-full bg-slate-800 border-t border-slate-700 flex justify-around p-3 pb-5">
+        <button id="nav-view-feed" onclick="window.mudarAba('view-feed')" class="nav-btn text-amber-400 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-layer-group text-lg"></i><span class="text-[9px] font-bold uppercase">Feed</span></button>
+        <button id="nav-view-mapa" onclick="window.mudarAba('view-mapa')" class="nav-btn text-slate-500 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-map-location-dot text-lg"></i><span class="text-[9px] font-bold uppercase">Mapa</span></button>
+        <button id="nav-view-date" onclick="window.mudarAba('view-date')" class="nav-btn text-slate-500 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-martini-glass-citrus text-lg"></i><span class="text-[9px] font-bold uppercase">Date</span></button>
+        <button id="nav-view-namoro" onclick="window.mudarAba('view-namoro')" class="nav-btn text-slate-500 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-heart-lock text-lg"></i><span class="text-[9px] font-bold uppercase">Vínculo</span></button>
+    </div>
 
-        // Adição dos 2 Contatos com Teclado Travado (Tela 1)
-        let totalEmergencia = 0;
-        function addEmergencia() {
-            const input = document.getElementById('inputEmergencia');
-            if (input.value.trim() !== "" && totalEmergencia < 2) {
-                totalEmergencia++;
-                document.getElementById('listaEmergencia').innerHTML += `<li>🚨 Contato: ${input.value}</li>`;
-                input.value = "";
-                document.getElementById('painelMensagensFree').style.display = 'block';
+</div>
 
-                if (totalEmergencia === 2) {
-                    input.disabled = true;
-                    input.placeholder = "Limite máximo atingido";
-                    document.getElementById('btnEmergencia').disabled = true;
-                }
-            }
-        }
-
-        // Revelação do Painel Raio-X Premium de Notas Positivas (Tela 2)
-        function mostrarDadosPremium() {
-            document.getElementById('painelDadosPremium').style.display = 'block';
-            document.getElementById('btnVerDados').style.display = 'none';
-        }
-
-        // Seleção de Chips de Avaliação (Tela 5)
-        document.querySelectorAll('.chip').forEach(chip => {
-            chip.addEventListener('click', function() {
-                this.classList.toggle('selected');
-            });
-        });
-
-        // Controle do Modo Congelar / Freeze (Tela 6)
-        function toggleFreeze() {
-            const overlay = document.getElementById('overlayCongelado');
-            if (overlay.style.display === 'flex') {
-                overlay.style.display = 'none';
-            } else {
-                if(confirm("Deseja congelar a relação? Seu perfil sumirá das buscas do aplicativo imediatamente, mantendo as memórias em segurança.")){
-                    overlay.style.display = 'flex';
-                }
-            }
-        }
-    </script>
 </body>
 </html>
