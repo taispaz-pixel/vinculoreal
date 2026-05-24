@@ -1,21 +1,27 @@
 {
   "name": "Vínculo Real",
   "short_name": "VínculoReal",
-  "description": "Conexões reais com segurança e autenticidade.",
+  "description": "Conexões autênticas, seguras e verdadeiras. Plataforma oficial registrada vinculoreal.com.br",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "theme_color": "#10b981",
+  "orientation": "portrait",
   "icons": [
     {
       "src": "./icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "./icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
-  ]
+  ],
+  "lang": "pt-BR",
+  "categories": ["social", "lifestyle", "communication"]
 }
