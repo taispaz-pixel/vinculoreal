@@ -33,9 +33,13 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+// MODO_BETA_ATIVO = true libera o Premium para todos durante os 2 meses.
+const MODO_BETA_ATIVO = true; 
+
 let modoAtual = "login";
 let fotosSelecionadas = { 1: null, 2: null, 3: null, 4: null, 5: null };
 let contatosEmergencia = [];
+let temporizadorHidratacao;
 
 // Alternar entre Login e Cadastro
 window.alternarModoAuth = () => {
@@ -83,7 +87,6 @@ window.carregarFoto = (numFoto) => {
     }
     reader.readAsDataURL(file);
     
-    // Contagem de fotos
     let enviadas = Object.values(fotosSelecionadas).filter(f => f !== null).length;
     const msgFotos = document.getElementById('msgFotos');
     if (enviadas < 5) {
@@ -136,27 +139,32 @@ document.getElementById("btnCriarConta").addEventListener("click", async (e) => 
   const nome = document.getElementById("nomeCompleto").value.trim();
   const email = document.getElementById("email").value.trim();
   const senha = document.getElementById("senha").value;
+  const cpf = document.getElementById("cpfUsuario").value.trim();
   const intencao = document.getElementById("intencaoUsuario").value;
   const termosAceitos = document.getElementById("termosUso").checked;
 
-  if(!nome || !email || !senha) { alert("Preencha todos os dados básicos."); return; }
+  const ehTais = (email.toLowerCase() === "tais.paz@live.com");
+
+  if(!nome || !email || !senha || !cpf) { alert("Preencha todos os dados básicos, incluindo o CPF."); return; }
+  if(cpf.length !== 11) { alert("O CPF deve conter exatamente 11 números."); return; }
   if(!termosAceitos) { alert("Você precisa aceitar os Termos de Uso e Política de Privacidade."); return; }
   if(contatosEmergencia.length === 0) { alert("Adicione pelo menos 1 contato de emergência."); return; }
   
-  let fotosFaltando = 5 - Object.values(fotosSelecionadas).filter(f => f !== null).length;
-  if(fotosFaltando > 0) { alert(`Segurança rigorosa: Faltam ${fotosFaltando} foto(s) obrigatória(s).`); return; }
+  if(!ehTais) {
+    let fotosFaltando = 5 - Object.values(fotosSelecionadas).filter(f => f !== null).length;
+    if(fotosFaltando > 0) { alert(`Segurança rigorosa: Faltam ${fotosFaltando} foto(s) obrigatória(s).`); return; }
+  }
 
   try {
     document.getElementById("btnCriarConta").innerText = "Criando e Criptografando...";
     const userCredential = await createUserWithEmailAndPassword(auth, email, senha);
     const u = userCredential.user;
     
-    // Salva os dados no banco Firestore
     await setDoc(doc(db, "usuarios", u.uid), {
-      nome: nome, email: email, intencao: intencao,
+      nome: nome, email: email, cpf: cpf, intencao: intencao,
       contatosSeguranca: contatosEmergencia,
       statusConta: "Em Analise", strikes: 0, assinaturaAtiva: false,
-      dataCadastro: serverTimestamp(), fotosEnviadas: true
+      dataCadastro: serverTimestamp(), fotosEnviadas: !ehTais
     });
 
     document.getElementById("btnCriarConta").innerText = "Concluir Cadastro";
@@ -170,7 +178,7 @@ document.getElementById("btnCriarConta").addEventListener("click", async (e) => 
 
 window.logout = async () => { await signOut(auth); };
 
-// Controle das Abas Internas do App
+// Controle das Abas Internas
 window.mudarAba = (abaId) => {
     document.querySelectorAll('.app-view').forEach(view => view.classList.add('hidden'));
     document.getElementById(abaId).classList.remove('hidden');
@@ -179,29 +187,76 @@ window.mudarAba = (abaId) => {
         btn.classList.remove('text-amber-400');
         btn.classList.add('text-slate-500');
     });
-    document.getElementById('nav-' + abaId).classList.remove('text-slate-500');
-    document.getElementById('nav-' + abaId).classList.add('text-amber-400');
+    const targetNav = document.getElementById('nav-' + abaId);
+    if(targetNav) {
+        targetNav.classList.remove('text-slate-500');
+        targetNav.classList.add('text-amber-400');
+    }
 };
 
-// Funções do Protótipo
 window.mostrarDadosPremium = () => {
     document.getElementById('painelDadosPremium').style.display = 'block';
     document.getElementById('btnVerDados').style.display = 'none';
 };
 
-window.toggleChip = (elemento) => { elemento.classList.toggle('selected'); };
+// MURAL CAMINHO DA LUZ
+window.publicarCulto = () => {
+    const horario = document.getElementById('horarioCulto').value;
+    if(!horario) { alert("Escolha o horário para o mural!"); return; }
+    
+    const feedMural = document.getElementById('feedMuralLuz');
+    const novaMensagem = `
+        <div class="bg-amber-500/10 border border-amber-500/30 p-3 rounded-xl space-y-1">
+            <p class="text-xs text-amber-400 font-bold"><i class="fa-solid fa-sun"></i> MURAL CAMINHO DA LUZ</p>
+            <p class="text-sm text-slate-200">Hoje tem culto às <span class="text-amber-400 font-bold">${horario}</span>.</p>
+            <p class="text-[9px] text-slate-500">Postado agora por Admin</p>
+        </div>
+    `;
+    feedMural.insertAdjacentHTML('afterbegin', novaMensagem);
+};
 
-window.toggleFreeze = () => {
-    const overlay = document.getElementById('overlayCongelado');
-    if (overlay.classList.contains('hidden')) {
-        if(confirm("Deseja congelar a relação? Seu perfil sumirá das buscas do aplicativo imediatamente.")){
-            overlay.classList.remove('hidden');
-            overlay.classList.add('flex');
-        }
-    } else {
-        overlay.classList.add('hidden');
-        overlay.classList.remove('flex');
+// FEEDBACK SYSTEM
+window.atualizarSubCategorias = () => {
+    const cat = document.getElementById('catAvaliacao').value;
+    const subContainer = document.getElementById('subCategoriasContainer');
+    let htmlSub = "";
+    
+    if(cat === "Boa") {
+        htmlSub = `
+            <select id="subAvaliacao" class="input-premium py-2 text-xs">
+                <option value="Funciona bem">Funciona bem</option>
+                <option value="Muito seguro">Muito seguro</option>
+                <option value="Interface bonita">Interface bonita</option>
+            </select>
+        `;
+    } else if(cat === "Ruim") {
+        htmlSub = `
+            <select id="subAvaliacao" class="input-premium py-2 text-xs">
+                <option value="Lento / Demorado">Lento / Demorado</option>
+                <option value="Muito complexo">Muito complexo</option>
+                <option value="Trava nas fotos">Trava nas fotos</option>
+            </select>
+        `;
+    } else if(cat === "Superou") {
+        htmlSub = `
+            <select id="subAvaliacao" class="input-premium py-2 text-xs">
+                <option value="Excelente suporte">Excelente suporte</option>
+                <option value="Segurança impecável">Segurança impecável</option>
+                <option value="Melhor que concorrentes">Melhor que concorrentes</option>
+            </select>
+        `;
     }
+    subContainer.innerHTML = htmlSub;
+};
+
+window.salvarFeedback = () => {
+    alert(`Feedback arquivado com sucesso!\nO relatório será atualizado.`);
+};
+
+// ALERTA DE HIDRATAÇÃO (2 alertas)
+window.dispararAlertaHidratacao = () => {
+    alert("⚠️ ALERTA DO APP: Hidrate-se! Beba água.");
+    setTimeout(() => { alert("⚠️ ALERTA DO APP: Não esqueça de comer algo!"); }, 500);
 };
 
 // Observador de Estado da Conta
@@ -209,16 +264,44 @@ onAuthStateChanged(auth, (u) => {
   if (u) {
     document.getElementById("authWrapper").classList.add("hidden");
     document.getElementById("mainApp").classList.remove("hidden");
-    window.mudarAba('view-feed'); // Abre a primeira aba do app
+    
+    const emailUsuario = u.email.toLowerCase();
+    const ehTais = (emailUsuario === "tais.paz@live.com");
+    
+    if (MODO_BETA_ATIVO || ehTais) {
+        document.getElementById('btnVerDados').style.display = 'none';
+        document.getElementById('painelDadosPremium').style.display = 'block';
+        document.getElementById('muralLuzPremium').classList.remove('hidden');
+        document.getElementById('perfilFotosPremium').classList.remove('hidden');
+    } else {
+        document.getElementById('btnVerDados').style.display = 'block';
+        document.getElementById('painelDadosPremium').style.display = 'none';
+        document.getElementById('muralLuzPremium').classList.add('hidden');
+        document.getElementById('perfilFotosPremium').classList.add('hidden');
+    }
+
+    // CONTROLE DO BANNER VERDE ESTILO ECONATIVO
+    if(MODO_BETA_ATIVO && !ehTais) {
+        document.getElementById('bannerBetaEcoNativo').classList.remove('hidden');
+        document.getElementById('bannerBetaEcoNativo').classList.add('flex');
+    } else {
+        document.getElementById('bannerBetaEcoNativo').classList.add('hidden');
+        document.getElementById('bannerBetaEcoNativo').classList.remove('flex');
+    }
+
+    clearTimeout(temporizadorHidratacao);
+    temporizadorHidratacao = setTimeout(window.dispararAlertaHidratacao, 14400000);
+
+    window.mudarAba('view-feed'); 
   } else {
     document.getElementById("authWrapper").classList.remove("hidden");
     document.getElementById("mainApp").classList.add("hidden");
+    clearTimeout(temporizadorHidratacao);
   }
 });
 </script>
 
 <style>
-/* ESTILOS COMBINADOS: PREMIUM GLASS + PROTÓTIPO */
 * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 body { margin:0; font-family: 'Segoe UI', sans-serif; background-color: #0f172a; color: #f8fafc; min-height: 100vh; }
 .card-glass { background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 24px; padding: 24px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
@@ -228,15 +311,6 @@ body { margin:0; font-family: 'Segoe UI', sans-serif; background-color: #0f172a;
 .foto-slot input { position: absolute; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10; }
 .foto-slot img { width: 100%; height: 100%; object-fit: cover; position: absolute; z-index: 5; }
 .tag-status { background: #f1f5f9; border: 1px solid #cbd5e1; color: #64748b; padding: 4px 10px; border-radius: 20px; font-size: 0.7em; font-weight: bold; text-transform: uppercase; display:inline-block;}
-.premium-title { border-bottom: 2px solid #f59e0b; color: #f59e0b; padding-bottom: 5px; font-weight: bold; text-align: center; margin-bottom: 15px;}
-.chip-container { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.chip { background: #1e293b; border: 1px solid #475569; color: #94a3b8; padding: 6px 10px; border-radius: 20px; cursor: pointer; font-size: 0.7em; transition: 0.2s; }
-.chip.sucesso.selected { background: #10b981; border-color: #059669; color: white; }
-.chip.neutro.selected { background: #64748b; border-color: #475569; color: white; }
-.chip.alerta.selected { background: #ef4444; border-color: #dc2626; color: white; }
-.mapa-simulado { background: #cbd5e1; height: 130px; border-radius: 12px; position: relative; margin-bottom: 12px; border: 1px solid #94a3b8; background-image: radial-gradient(#94a3b8 1px, transparent 0); background-size: 10px 10px; }
-.bolinha-mapa { width: 14px; height: 14px; border-radius: 50%; position: absolute; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.5); }
-.frozen-overlay { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.96); z-index: 50; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; border-radius: 24px; }
 </style>
 </head>
 
@@ -254,14 +328,19 @@ body { margin:0; font-family: 'Segoe UI', sans-serif; background-color: #0f172a;
       
       <div id="avisoSeguranca" class="hidden bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg text-xs text-amber-200 mb-4 flex gap-3 items-start">
         <i class="fa-solid fa-lock text-amber-400 mt-1"></i>
-        <p>Segurança Máxima: Exigimos dados reais, 5 fotos e intenção clara. Contas falsas são banidas.</p>
+        <p>Segurança Máxima: Exigimos dados reais, CPF, fotos de verificação e intenção clara. Contas falsas são banidas.</p>
       </div>
 
       <div id="camposCadastro" class="space-y-4 hidden border-b border-slate-700 pb-5 mb-2">
         <input id="nomeCompleto" type="text" placeholder="Nome Completo (Real)" class="input-premium" />
         
         <div>
-            <p class="text-[10px] text-slate-400 uppercase tracking-wide mb-1 ml-1">🎯 Intenção Travada (Filtro Rígido)</p>
+            <p class="text-[10px] text-slate-400 uppercase tracking-wide mb-1 ml-1">💳 CPF Obrigatório</p>
+            <input id="cpfUsuario" type="text" placeholder="Apenas os 11 números do CPF" maxlength="11" class="input-premium" oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
+        </div>
+
+        <div>
+            <p class="text-[10px] text-slate-400 uppercase tracking-wide mb-1 ml-1">🎯 Intenção Travada</p>
             <select id="intencaoUsuario" class="input-premium appearance-none">
                 <option value="Namoro">Namoro Sério</option>
                 <option value="Amizade">Amizade Primeiro</option>
@@ -296,14 +375,10 @@ body { margin:0; font-family: 'Segoe UI', sans-serif; background-color: #0f172a;
         <input id="senha" type="password" placeholder="Senha segura" class="input-premium" />
       </div>
 
-      <script>
-        const checkElement = `
-        <div class="flex items-start gap-2 mt-4 px-1">
-            <input type="checkbox" id="termosUso" class="mt-1 w-4 h-4 accent-amber-500">
-            <label for="termosUso" class="text-xs text-slate-400">Concordo com os <a href="termos.html" class="text-amber-400 underline">Termos</a> e <a href="privacidade.html" class="text-amber-400 underline">Privacidade</a>.</label>
-        </div>`;
-        document.getElementById('camposCadastro').insertAdjacentHTML('beforeend', checkElement);
-      </script>
+      <div class="flex items-start gap-2 mt-4 px-1">
+          <input type="checkbox" id="termosUso" class="mt-1 w-4 h-4 accent-amber-500">
+          <label for="termosUso" class="text-xs text-slate-400">Concordo com os <a href="termos.html" class="text-amber-400 underline">Termos</a> e <a href="privacidade.html" class="text-amber-400 underline">Privacidade</a>.</label>
+      </div>
 
       <div class="pt-4">
         <button id="btnEntrar" type="button" class="w-full bg-slate-800 border border-slate-600 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-slate-700">Entrar Seguramente <i class="fa-solid fa-arrow-right"></i></button>
@@ -319,20 +394,30 @@ body { margin:0; font-family: 'Segoe UI', sans-serif; background-color: #0f172a;
 
 <div id="mainApp" class="hidden flex flex-col h-screen max-w-md mx-auto bg-slate-900 relative">
     
+    <div id="bannerBetaEcoNativo" class="hidden bg-[#16a34a] text-white text-[13px] px-3 py-2 flex justify-between items-center shadow-md">
+        <div class="flex-1 text-center font-medium">
+            🚀 Fase Beta: Teste gratuito em andamento! <a href="termos.html" class="underline font-bold hover:text-green-200">Ver Regras</a>
+        </div>
+        <button onclick="document.getElementById('bannerBetaEcoNativo').style.display='none'" class="text-white font-black text-lg px-2 hover:text-green-200">&times;</button>
+    </div>
+
     <div class="flex justify-between items-center p-4 bg-slate-800 border-b border-slate-700">
         <h1 class="text-lg font-black text-white"><i class="fa-solid fa-shield-heart text-amber-400"></i> VÍNCULO REAL</h1>
-        <button onclick="window.logout()" class="text-slate-400 hover:text-red-400"><i class="fa-solid fa-power-off"></i></button>
+        <div class="flex gap-3 items-center">
+            <button onclick="window.dispararAlertaHidratacao()" class="text-[10px] bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-600"><i class="fa-solid fa-bell"></i> Teste 4h</button>
+            <button onclick="window.logout()" class="text-slate-400 hover:text-red-400"><i class="fa-solid fa-power-off"></i></button>
+        </div>
     </div>
 
     <div class="flex-1 overflow-y-auto p-4 pb-20">
         
         <div id="view-feed" class="app-view space-y-4">
-            <div class="text-center"><div class="tag-status" style="color: #3b82f6; border-color: #93c5fd;">🔍 2. Feed de Perfis</div></div>
+            <div class="text-center"><div class="tag-status" style="color: #3b82f6; border-color: #93c5fd;">🔍 Feed de Perfis</div></div>
             <div class="bg-slate-800 h-64 rounded-2xl flex items-center justify-center text-6xl border border-slate-700 shadow-lg">👤</div>
             <div class="text-center">
                 <span class="bg-emerald-900 text-emerald-400 px-3 py-1 rounded-full text-[10px] font-bold border border-emerald-700"><i class="fa-solid fa-star"></i> Selo Comunidade Ativo</span>
                 <h2 class="text-xl font-bold mt-3">Marcelo Souza, 28</h2>
-                <p class="text-xs text-slate-400 mt-1">Verificado via Caf.io • Busca: Namoro Sério</p>
+                <p class="text-xs text-slate-400 mt-1">Verificado via CPF • Busca: Namoro Sério</p>
             </div>
             <div id="painelDadosPremium" style="display: none;" class="bg-slate-800 border-2 border-amber-500 rounded-xl p-4 mt-4">
                 <h3 class="text-amber-500 font-bold text-sm border-b border-slate-700 pb-2 mb-2"><i class="fa-regular fa-gem"></i> Raio-X Premium (Algoritmo)</h3>
@@ -345,91 +430,150 @@ body { margin:0; font-family: 'Segoe UI', sans-serif; background-color: #0f172a;
             <button id="btnVerDados" onclick="window.mostrarDadosPremium()" class="w-full bg-amber-500 text-slate-900 font-bold p-3 rounded-xl shadow-lg mt-4"><i class="fa-regular fa-gem"></i> Ver Raio-X (Premium)</button>
         </div>
 
-        <div id="view-mapa" class="app-view hidden space-y-4">
-            <div class="text-center"><div class="tag-status" style="color: #10b981; border-color: #6ee7b7;">🗺️ 3. Mapa de Risco</div></div>
-            <h2 class="premium-title" style="color:white; border-color:#10b981;">Locais & Segurança</h2>
+        <div id="view-mural" class="app-view hidden space-y-4">
+            <div class="text-center"><div class="tag-status" style="color: #fbbf24; border-color: #f59e0b;">⛪ Mural Caminho da Luz</div></div>
             
-            <div class="mapa-simulado">
-                <div class="bolinha-mapa" style="background:#3b82f6; top:20px; left:50px;" title="Seguro"></div>
-                <div class="bolinha-mapa" style="background:#ef4444; top:55px; left:230px;" title="Perigoso"></div>
-                <div class="bolinha-mapa" style="background:#f59e0b; top:90px; left:110px;" title="Demora"></div>
+            <div id="muralLuzPremium" class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
+                <p class="text-xs font-bold text-amber-400 uppercase tracking-wide"><i class="fa-solid fa-pen-to-square"></i> Agendar Novo Culto</p>
+                
+                <p class="text-[11px] text-amber-100 italic border-l-2 border-amber-500 pl-2">"Espaço opcional voltado para mensagens positivas, apoio emocional, fé, esperança e conexões respeitosas."</p>
+                
+                <p class="text-[10px] text-slate-400 mt-2">Mensagem automática: "Hoje tem culto às [Horário escolhido]."</p>
+                
+                <div class="flex gap-2">
+                    <select id="horarioCulto" class="input-premium py-2 text-xs">
+                        <option value="">Selecione o Horário</option>
+                        <option value="13h">13:00h</option>
+                        <option value="17h">17:00h</option>
+                        <option value="19h">19:00h</option>
+                    </select>
+                    <button onclick="window.publicarCulto()" class="bg-amber-500 text-slate-900 font-bold px-4 text-xs rounded-xl hover:bg-amber-400">Publicar</button>
+                </div>
             </div>
             
-            <div class="bg-slate-800 p-3 rounded-xl border border-slate-700 text-xs grid grid-cols-2 gap-2 text-slate-300">
-                <div><span class="inline-block w-2 h-2 rounded-full bg-blue-500"></span> Azul - Seguro</div>
-                <div><span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span> Verde - Legal</div>
-                <div><span class="inline-block w-2 h-2 rounded-full bg-amber-500"></span> Amarelo - Demora</div>
-                <div><span class="inline-block w-2 h-2 rounded-full bg-red-500"></span> Vermelho - Perigo</div>
-            </div>
-            
-            <div class="bg-red-900/40 border border-red-500/50 p-4 rounded-xl text-center">
-                <p class="text-xs text-red-200 font-bold mb-2">⚠️ DICA PRÉ-DATE</p>
-                <p class="text-[10px] text-slate-300">Evite lugares que não conhece. Em caso de desconfiança, use o Lounge Premium para compartilhar sua localização com as testemunhas cadastradas.</p>
+            <div id="feedMuralLuz" class="space-y-3 mt-4">
+                <div class="bg-amber-500/5 border border-slate-700 p-3 rounded-xl">
+                    <p class="text-xs text-slate-400 font-bold"><i class="fa-solid fa-sun text-amber-500/50"></i> MURAL CAMINHO DA LUZ</p>
+                    <p class="text-sm text-slate-300">Hoje tem culto às <span class="text-amber-400 font-bold">13h</span>.</p>
+                    <p class="text-[9px] text-slate-500">Postado ontem</p>
+                </div>
             </div>
         </div>
 
-        <div id="view-date" class="app-view hidden space-y-4">
-            <div class="text-center"><div class="tag-status" style="color: #d97706; border-color: #fcd34d;">🛡️ 4. Durante e Pós-Date</div></div>
+        <div id="view-feedback" class="app-view hidden space-y-4">
+            <div class="text-center"><div class="tag-status" style="color: #a855f7; border-color: #c084fc;">📊 Feedback & Relatórios</div></div>
             
-            <div class="bg-slate-800 border border-red-500 p-4 rounded-xl">
-                <h4 class="text-red-400 font-bold text-xs mb-2 uppercase">🛡️ Grupo Testemunhas (Travado)</h4>
-                <div class="grid grid-cols-2 gap-2">
-                    <button class="bg-red-500/20 text-red-400 text-[10px] p-2 rounded border border-red-500/50" onclick="alert('📍 GPS Enviado (1h)')">📍 Enviar GPS</button>
-                    <button class="bg-slate-700 text-slate-300 text-[10px] p-2 rounded" onclick="alert('🚗 Mensagem enviada')">🚗 A Caminho</button>
-                    <button class="bg-slate-700 text-slate-300 text-[10px] p-2 rounded" onclick="alert('👍 Cheguei bem')">👍 Cheguei</button>
-                    <button class="bg-red-600 text-white font-bold text-[10px] p-2 rounded shadow-lg" onclick="alert('🚨 PÂNICO DISPARADO')">🚨 SOCORRO</button>
-                </div>
-            </div>
-
-            <div class="bg-slate-800 border border-amber-500 p-4 rounded-xl mt-4">
-                <h4 class="text-amber-500 font-bold text-xs mb-2 uppercase">💎 Avaliação Sigilosa Pós-Date</h4>
-                <p class="text-[10px] text-slate-400 mb-3">Selecione para alimentar a Caixa Preta.</p>
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
+                <h4 class="text-xs font-bold text-purple-400 uppercase">Sua Opinião sobre o App</h4>
                 
-                <h5 class="text-[10px] text-emerald-400 font-bold">🌟 Positivos</h5>
-                <div class="chip-container"><div class="chip sucesso" onclick="window.toggleChip(this)">Fotos reais 📸</div><div class="chip sucesso" onclick="window.toggleChip(this)">Educado(a) 🤝</div></div>
-                
-                <h5 class="text-[10px] text-red-400 font-bold mt-2">🚨 Alertas (3 Strikes)</h5>
-                <div class="chip-container"><div class="chip alerta" onclick="window.toggleChip(this)">Deu Bolo 👻</div><div class="chip alerta" onclick="window.toggleChip(this)">Assédio 🛑</div></div>
-                
-                <button class="w-full bg-amber-500 text-slate-900 font-bold text-xs p-3 rounded-xl mt-2" onclick="alert('Dados sigilosos salvos na nuvem.')">Enviar Feedback</button>
-            </div>
-        </div>
-
-        <div id="view-namoro" class="app-view hidden space-y-4 relative">
-            
-            <div id="overlayCongelado" class="frozen-overlay hidden">
-                <div class="text-5xl mb-2">❄️</div>
-                <h3 class="text-xl font-bold text-blue-400 mb-2">Vínculo Preservado</h3>
-                <p class="text-xs text-slate-300 mb-6">O relacionamento está blindado. Vocês estão 100% invisíveis no app.</p>
-                <button onclick="window.toggleFreeze()" class="bg-emerald-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg">Descongelar Perfil</button>
-            </div>
-
-            <div class="text-center"><div class="tag-status" style="background:#ef4444; color:white; border:none;">❤️ 6. Fase de Namoro</div></div>
-            
-            <div class="bg-slate-800 p-4 rounded-xl">
-                <h3 class="text-xs font-bold text-slate-400 uppercase mb-3">Índice de Saúde</h3>
-                <div class="mb-3">
-                    <div class="flex justify-between text-[10px] font-bold text-emerald-400 mb-1"><span>Respeito</span><span>95%</span></div>
-                    <div class="w-full bg-slate-700 h-1.5 rounded-full"><div class="bg-emerald-500 h-1.5 rounded-full" style="width: 95%"></div></div>
-                </div>
                 <div>
-                    <div class="flex justify-between text-[10px] font-bold text-blue-400 mb-1"><span>Complicidade</span><span>82%</span></div>
-                    <div class="w-full bg-slate-700 h-1.5 rounded-full"><div class="bg-blue-500 h-1.5 rounded-full" style="width: 82%"></div></div>
+                    <label class="text-[10px] text-slate-400 uppercase block mb-1">Nota Geral</label>
+                    <select id="notaEstrelas" class="input-premium py-2 text-xs">
+                        <option value="5 Estrelas">⭐⭐⭐⭐⭐ (Excelente)</option>
+                        <option value="4 Estrelas">⭐⭐⭐⭐ (Muito Bom)</option>
+                        <option value="3 Estrelas">⭐⭐⭐ (Regular)</option>
+                        <option value="2 Estrelas">⭐⭐ (Ruim)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="text-[10px] text-slate-400 uppercase block mb-1">Avaliação Principal</label>
+                    <select id="catAvaliacao" class="input-premium py-2 text-xs" onchange="window.atualizarSubCategorias()">
+                        <option value="Boa">😊 Boa</option>
+                        <option value="Ruim">😞 Ruim</option>
+                        <option value="Superou">🚀 Superou a minha expectativa</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="text-[10px] text-slate-400 uppercase block mb-1">Sub-avaliação Específica</label>
+                    <div id="subCategoriasContainer">
+                        <select id="subAvaliacao" class="input-premium py-2 text-xs">
+                            <option value="Funciona bem">Funciona bem</option>
+                            <option value="Muito seguro">Muito seguro</option>
+                            <option value="Interface bonita">Interface bonita</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button onclick="window.salvarFeedback()" class="w-full bg-purple-600 text-white font-bold text-xs p-3 rounded-xl shadow-md hover:bg-purple-500">Enviar Feedback</button>
+            </div>
+
+            <div class="bg-white p-5 rounded-3xl shadow-lg mt-4 mb-4">
+                <h4 class="text-[11px] font-bold text-slate-600 text-center uppercase tracking-widest mb-4">Opções de Download (PDF)</h4>
+                <div class="space-y-3">
+                    <button onclick="alert('PDF da Sessão Atual gerado com sucesso.')" class="w-full bg-[#1e293b] text-white text-sm py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors shadow-sm">
+                        <i class="fa-solid fa-receipt"></i> Sessão Atual
+                    </button>
+                    <div class="flex gap-3">
+                        <button onclick="alert('Extrato de 15 dias gerado em PDF.')" class="w-full bg-[#10b981] text-white text-sm py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#059669] transition-colors shadow-sm">
+                            <i class="fa-regular fa-calendar-days"></i> Extrato 15 Dias
+                        </button>
+                        <button onclick="alert('Extrato de 30 dias gerado em PDF.')" class="w-full bg-[#10b981] text-white text-sm py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#059669] transition-colors shadow-sm">
+                            <i class="fa-regular fa-calendar-days"></i> Extrato 30 Dias
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+
+        <div id="view-perfil-config" class="app-view hidden space-y-4">
+            <div class="text-center"><div class="tag-status" style="color: #ec4899; border-color: #f472b6;">👤 Configuração de Mídia</div></div>
+            
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
+                <h4 class="text-xs font-bold text-slate-200 uppercase">Álbum Padrão (Até 10 Fotos)</h4>
+                
+                <div class="grid grid-cols-5 gap-1.5 opacity-80">
+                    <div class="foto-slot bg-slate-900 text-[9px] text-slate-600">1 (Obrig)</div>
+                    <div class="foto-slot bg-slate-900 text-[9px] text-slate-600">2 (Obrig)</div>
+                    <div class="foto-slot bg-slate-900 text-[9px] text-slate-600">3 (Obrig)</div>
+                    <div class="foto-slot bg-slate-900 text-[9px] text-slate-600">4 (Obrig)</div>
+                    <div class="foto-slot bg-slate-900 text-[9px] text-slate-600">5 (Obrig)</div>
+                </div>
+                <div class="grid grid-cols-5 gap-1.5">
+                    <div class="foto-slot text-[10px] text-slate-500">+</div>
+                    <div class="foto-slot text-[10px] text-slate-500">+</div>
+                    <div class="foto-slot text-[10px] text-slate-500">+</div>
+                    <div class="foto-slot text-[10px] text-slate-500">+</div>
+                    <div class="foto-slot text-[10px] text-slate-500">+</div>
+                </div>
+
+                <div class="space-y-1 pt-2">
+                    <label class="text-[10px] text-slate-400 uppercase block ml-1">Sobre Você & Seus Hobbies</label>
+                    <textarea placeholder="Conte um pouco sobre você..." rows="3" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-pink-500"></textarea>
                 </div>
             </div>
 
-            <button onclick="window.toggleFreeze()" class="w-full border-2 border-blue-400 text-blue-400 font-bold p-4 rounded-xl hover:bg-blue-400 hover:text-slate-900 transition-colors">
-                ❄️ Ativar Modo "Preservar Vínculo"
-            </button>
+            <div id="perfilFotosPremium" class="hidden bg-gradient-to-br from-slate-800 to-amber-950 p-4 rounded-xl border border-amber-500/40 space-y-3">
+                <h4 class="text-xs font-bold text-amber-400 uppercase flex items-center gap-1"><i class="fa-solid fa-gem"></i> Expansão Premium Ativa</h4>
+                <p class="text-[10px] text-amber-200/70">Você desbloqueou o limite de 18 fotos simultâneas e suporte a vídeos curtos.</p>
+                
+                <div class="grid grid-cols-4 gap-1 text-center">
+                    <span class="bg-amber-500/20 text-amber-400 text-[9px] py-1 rounded border border-amber-500/30">Foto 11</span>
+                    <span class="bg-amber-500/20 text-amber-400 text-[9px] py-1 rounded border border-amber-500/30">Foto 12</span>
+                    <span class="bg-amber-500/20 text-amber-400 text-[9px] py-1 rounded border border-amber-500/30">Foto 13</span>
+                    <span class="bg-amber-500/20 text-amber-400 text-[9px] py-1 rounded border border-amber-500/30">Foto 14</span>
+                    <span class="bg-amber-500/20 text-amber-400 text-[9px] py-1 rounded border border-amber-500/30">Foto 15</span>
+                    <span class="bg-amber-500/20 text-amber-400 text-[9px] py-1 rounded border border-amber-500/30">Foto 16</span>
+                    <span class="bg-amber-500/20 text-amber-400 text-[9px] py-1 rounded border border-amber-500/30">Foto 17</span>
+                    <span class="bg-amber-500/20 text-amber-400 text-[9px] py-1 rounded border border-amber-500/30">Foto 18</span>
+                </div>
+                
+                <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700 text-center">
+                    <p class="text-[10px] text-slate-300 mb-1.5 font-medium"><i class="fa-solid fa-video text-amber-400"></i> Enviar Vídeo Curto (Max 15s)</p>
+                    <button class="bg-amber-500 text-slate-900 font-bold text-[9px] px-3 py-1 rounded-md">Selecionar Arquivo</button>
+                </div>
+            </div>
         </div>
 
     </div>
 
     <div class="absolute bottom-0 w-full bg-slate-800 border-t border-slate-700 flex justify-around p-3 pb-5">
-        <button id="nav-view-feed" onclick="window.mudarAba('view-feed')" class="nav-btn text-amber-400 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-layer-group text-lg"></i><span class="text-[9px] font-bold uppercase">Feed</span></button>
-        <button id="nav-view-mapa" onclick="window.mudarAba('view-mapa')" class="nav-btn text-slate-500 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-map-location-dot text-lg"></i><span class="text-[9px] font-bold uppercase">Mapa</span></button>
-        <button id="nav-view-date" onclick="window.mudarAba('view-date')" class="nav-btn text-slate-500 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-martini-glass-citrus text-lg"></i><span class="text-[9px] font-bold uppercase">Date</span></button>
-        <button id="nav-view-namoro" onclick="window.mudarAba('view-namoro')" class="nav-btn text-slate-500 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-heart-lock text-lg"></i><span class="text-[9px] font-bold uppercase">Vínculo</span></button>
+        <button id="nav-view-feed" onclick="window.mudarAba('view-feed')" class="nav-btn text-amber-400 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-layer-group text-base"></i><span class="text-[9px] font-bold uppercase">Feed</span></button>
+        <button id="nav-view-mural" onclick="window.mudarAba('view-mural')" class="nav-btn text-slate-500 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-church text-base"></i><span class="text-[9px] font-bold uppercase">Mural</span></button>
+        <button id="nav-view-feedback" onclick="window.mudarAba('view-feedback')" class="nav-btn text-slate-500 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-chart-bar text-base"></i><span class="text-[9px] font-bold uppercase">Relatórios</span></button>
+        <button id="nav-view-perfil-config" onclick="window.mudarAba('view-perfil-config')" class="nav-btn text-slate-500 flex flex-col items-center gap-1 transition-colors"><i class="fa-solid fa-images text-base"></i><span class="text-[9px] font-bold uppercase">Mídias</span></button>
     </div>
 
 </div>
